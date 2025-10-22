@@ -9,66 +9,73 @@ on:
       - 'scripts/**'
       - 'workflow_db.py'
       - 'create_categories.py'
-  workflow_dispatch:  # Allow manual triggering
+  workflow_dispatch:  # 允许手动触发
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+# 设置 GITHUB_TOKEN 的权限，以允许部署到 GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# 同一时间只允许一个部署进行
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  # Build job
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 # 使用一个稳定的长期支持版本
     steps:
-      - name: Checkout
+      # 1. 检出代码
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. 设置Python环境
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
+      # 3. 安装依赖
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Setup database and generate search index
+      # 4. 初始化数据库并生成索引 (修正后的关键步骤)
+      - name: Initialize database and generate search index
         run: |
-          # Create database directory
+          # 创建必要的目录
           mkdir -p database
-
-          # Index all workflows
+          # 首先运行 --reindex 来创建数据库和基础数据
+          python run.py --reindex
+          # 然后执行索引和分类创建
           python workflow_db.py --index --force
-
-          # Generate categories
           python create_categories.py
-
-          # Generate static search index for GitHub Pages
+          # 最后生成用于静态站点的搜索索引
           python scripts/generate_search_index.py
 
+      # 5. 设置静态站点构建的路径
+      # 假设 generate_search_index.py 脚本已将最终静态文件输出到 'site' 目录
+      # 如果输出目录是 'docs'，则将此路径改为 './docs'
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
+      # 6. 上传构建产物 (请确认您的脚本输出目录)
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './docs'
+          # 此路径必须包含最终的 index.html 文件
+          # 请根据 generate_search_index.py 脚本的实际输出目录进行修改
+          # 常见目录为 './site' 或 './docs' 或 './dist'
+          path: ./site
 
-  # Deployment job
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
+    runs-on: ubuntu-22.04
+    needs: build # 确保在 build 任务成功完成后才运行
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
